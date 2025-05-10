@@ -26,7 +26,7 @@ with st.sidebar:
 
     run_button = st.button("开始模拟")
 
-if run_button or 'results' not in st.session_state:
+if run_button:
     with st.spinner("正在运行模拟，请稍候..."):
         tmpdir = tempfile.mkdtemp()
 
