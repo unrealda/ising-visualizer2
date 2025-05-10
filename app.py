@@ -1,76 +1,69 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from ising_model import run_ising_simulation  # 在 ising_model.py 中定义此函数
-from visualizer import plot_spin_arrows, plot_spin_ratio_vs_temp
-import os
-import tempfile
+from ising_model import run_ising_simulation
+from visualizer import generate_spin_plot
 
-# 页面配置
-st.set_page_config(layout="wide", page_title="2D Ising Model Simulator")
+st.set_page_config(layout="wide")
+st.title("2D Ising Model Simulator with Wolff Algorithm")
 
-st.title("🧊 2D Ising Model Simulator & Visualizer")
-st.markdown("""
-本平台使用 **Wolff 算法** 进行二维伊辛模型模拟，支持：
-- 🔁 温度扫描
-- 🎯 自旋箭头动画（红↑蓝↓）
-- 📈 自旋比例图
-- 🌀 磁滞回线（最终温度）
-""")
+col1, col2 = st.columns(2)
 
-# 用户输入参数
-with st.sidebar:
-    st.header("⚙️ 模拟参数")
-    L = st.slider("晶格边长 L", 10, 100, 20)
-    Ntrial = st.slider("每个温度的迭代次数", 10, 500, 100)
-    Tmin = st.number_input("最低温度 Tmin", min_value=0.1, value=1.0)
-    Tmax = st.number_input("最高温度 Tmax", min_value=Tmin+0.1, value=3.5)
-    nT = st.slider("温度步数 nT", 3, 50, 20)
-    lattice_type = st.selectbox("晶格类型", ["Square", "Triangular"])
+with col1:
+    lattice_size = st.slider("Lattice Size (L x L)", min_value=10, max_value=100, value=20, step=5)
+    lattice_type = st.selectbox("Lattice Type", options=["Square", "Triangular"])
+    n_trials = st.number_input("Monte Carlo Steps per Temperature", min_value=10, max_value=1000, value=100)
 
-# 开始模拟
-if st.button("▶️ 开始模拟"):
-    with st.spinner("正在进行伊辛模型模拟，请稍候..."):
-        outdir = tempfile.mkdtemp()
-        result = run_ising_simulation(
-            L=L,
+with col2:
+    Tmin = st.number_input("Minimum Temperature", min_value=0.1, max_value=5.0, value=1.5, step=0.1)
+    Tmax = st.number_input("Maximum Temperature", min_value=0.1, max_value=5.0, value=3.5, step=0.1)
+    nT = st.slider("Number of Temperature Points", min_value=3, max_value=100, value=20)
+
+if st.button("Run Simulation"):
+    with st.spinner("Running Wolff algorithm simulation..."):
+        results = run_ising_simulation(
+            L=lattice_size,
+            lattice=lattice_type,
+            Ntrial=n_trials,
             Tmin=Tmin,
             Tmax=Tmax,
-            nT=nT,
-            Ntrial=Ntrial,
-            Lattice=lattice_type,
-            outdir=outdir
+            nT=nT
         )
 
-        st.success("✅ 模拟完成！")
+    st.success("Simulation completed!")
 
-        # 分页显示结果
-        st.subheader("🎯 自旋箭头图")
-        idx = st.slider("选择温度帧索引", 0, nT - 1, 0)
-        fig_arrow = plot_spin_arrows(result["spin_configs"][idx], result["temps"][idx])
-        st.pyplot(fig_arrow)
+    # Magnetization and Susceptibility plot
+    T_list = results["temperature"]
+    M_list = results["magnetization"]
+    Chi_list = results["susceptibility"]
+    Mvar_list = results["Mvar"]
 
-        st.subheader("📊 自旋比例图")
-        fig_ratio = plot_spin_ratio_vs_temp(result["temps"], result["up_ratios"], result["down_ratios"])
-        st.pyplot(fig_ratio)
+    fig1, ax1 = plt.subplots()
+    ax1.errorbar(T_list, M_list, yerr=np.sqrt(Mvar_list), fmt='o-', label='Magnetization')
+    ax1.set_ylabel("Magnetization", color='tab:blue')
+    ax1.tick_params(axis='y', labelcolor='tab:blue')
 
-        st.subheader("📈 磁化率 & 磁化强度")
-        fig_mag = plt.figure(figsize=(8,4))
-        plt.plot(result["temps"], result["magnetizations"], 'r-o', label='Magnetization')
-        plt.plot(result["temps"], result["susceptibilities"], 'b-s', label='Susceptibility')
-        plt.xlabel("Temperature")
-        plt.title("Magnetization & Susceptibility")
-        plt.legend()
-        plt.grid(True)
-        st.pyplot(fig_mag)
+    ax2 = ax1.twinx()
+    ax2.plot(T_list, Chi_list, 's--', color='tab:red', label='Susceptibility')
+    ax2.set_ylabel("Susceptibility", color='tab:red')
+    ax2.tick_params(axis='y', labelcolor='tab:red')
 
-        st.subheader("🌀 最终温度磁滞回线")
-        fig_hys = plt.figure(figsize=(6,4))
-        plt.plot(result["H_vals"], result["hysteresis"], 'o-', linewidth=1.5)
-        plt.xlabel("External Field H")
-        plt.ylabel("Magnetization")
-        plt.title(f"Hysteresis at T = {result['T_final']:.2f}")
-        plt.grid(True)
-        st.pyplot(fig_hys)
+    ax1.set_xlabel("Temperature")
+    ax1.set_title("Magnetization and Susceptibility vs Temperature")
+    fig1.tight_layout()
+    st.pyplot(fig1)
 
-        st.info(f"📁 所有数据已保存在临时目录: `{outdir}`，模拟结果不会长期保存，请及时下载。")
+    # Optional: display spin configuration at final temperature
+    final_spin_config = results["final_spin"]
+    fig2 = generate_spin_plot(final_spin_config)
+    st.pyplot(fig2)
+
+    # Optional: display spin ratio plot
+    fig3 = results.get("spin_ratio_fig")
+    if fig3:
+        st.pyplot(fig3)
+
+    # Optional: display hysteresis animation GIF if available
+    gif_path = results.get("hysteresis_gif")
+    if gif_path:
+        st.image(gif_path, caption="Hysteresis Loop Animation")
