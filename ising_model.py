@@ -1,103 +1,61 @@
 import numpy as np
 
-def square_neighbors(L):
+def run_ising_simulation(L, Tmin, Tmax, nT, Ntrial, folder):
     N = L * L
-    site_dic = {}
-    x_y_dic = []
-    
-    for j in range(N):
-        row = j // L
-        col = j % L
-        key = f"{row},{col}"
-        site_dic[key] = j
-        x_y_dic.append([row, col])
-        
-    nbr = []
-    for j in range(N):
-        row, col = x_y_dic[j]
-        neighbors = [
-            site_dic.get(f"{row},{(col + 1) % L}"),
-            site_dic.get(f"{(row + 1) % L},{col}"),
-            site_dic.get(f"{row},{(col - 1) % L}"),
-            site_dic.get(f"{(row - 1) % L},{col}")
-        ]
-        nbr.append(neighbors)
-    
-    return nbr, site_dic, x_y_dic
+    T_list = np.linspace(Tmin, Tmax, nT)
+    M_list = []
+    Chi_list = []
+    spin_snapshots = []
 
-def triangular_neighbors(L):
-    N = L * L
-    site_dic = {}
-    x_y_dic = []
-    
-    for j in range(N):
-        row = j // L
-        col = j % L
-        key = f"{row},{col}"
-        site_dic[key] = j
-        x_y_dic.append([row, col])
-        
-    nbr = []
-    for j in range(N):
-        row, col = x_y_dic[j]
-        neighbors = [
-            site_dic.get(f"{row},{(col + 1) % L}"),
-            site_dic.get(f"{(row + 1) % L},{col}"),
-            site_dic.get(f"{row},{(col - 1) % L}"),
-            site_dic.get(f"{(row - 1) % L},{col}"),
-            site_dic.get(f"{(row + 1) % L},{(col - 1) % L}"),
-            site_dic.get(f"{(row - 1) % L},{(col + 1) % L}")
-        ]
-        nbr.append(neighbors)
-    
-    return nbr, site_dic, x_y_dic
-
-def run_ising_model(L, Lattice, Tmin, Tmax, nT, Ntrial):
-    if Lattice == 'Square':
-        nbr, site_dic, x_y_dic = square_neighbors(L)
-    elif Lattice == 'Triangular':
-        nbr, site_dic, x_y_dic = triangular_neighbors(L)
-    else:
-        raise ValueError("Invalid lattice type.")
-
-    N = L * L
-    T_num = np.linspace(Tmin, Tmax, nT)
-    M = np.zeros(nT)
-    Mvar = np.zeros(nT)
-    M2 = np.zeros(nT)
-    Chi = np.zeros(nT)
-    Mean_cluster_size = np.zeros(nT)
-
-    for i, t in enumerate(T_num):
-        beta = 1.0 / t
+    for T in T_list:
+        beta = 1.0 / T
         p = 1 - np.exp(-2 * beta)
-        S = 2 * (np.random.randint(2, size=N) - 1) - 1
+        S = np.random.choice([-1, 1], size=N)  # initial spin state
 
-        N_cluster_size = np.zeros(Ntrial)
-        Magnetization = np.zeros(Ntrial)
+        magnetizations = []
 
-        for itera in range(Ntrial):
+        for _ in range(Ntrial):
             k = np.random.randint(N)
-            Pocket = [k]
-            Cluster = [k]
+            cluster = [k]
+            pocket = [k]
 
-            while Pocket:
-                s = Pocket[np.random.randint(len(Pocket))]
-                for l in nbr[s]:
-                    if S[l] == S[s] and l not in Cluster and np.random.rand() < p:
-                        Pocket.append(l)
-                        Cluster.append(l)
-                Pocket = [x for x in Pocket if x != s]
+            while pocket:
+                s = pocket.pop(np.random.randint(len(pocket)))
+                neighbors = get_neighbors(s, L)
+                for n in neighbors:
+                    if S[n] == S[s] and n not in cluster:
+                        if np.random.rand() < p:
+                            cluster.append(n)
+                            pocket.append(n)
 
-            N_cluster_size[itera] = len(Cluster)
-            S[Cluster] = -S[Cluster]
-            Magnetization[itera] = np.sum(S)
-        
-        # Collect results for further analysis
-        M[i] = np.mean(np.abs(Magnetization)) / N
-        M2[i] = np.mean(Magnetization**2) / N**2
-        Mvar[i] = np.var(Magnetization / N) / N
-        Chi[i] = (N / t) * (M2[i] - M[i]**2)
-        Mean_cluster_size[i] = np.mean(N_cluster_size)
+            for site in cluster:
+                S[site] *= -1
 
-    return T_num, M, Mvar, M2, Chi, Mean_cluster_size
+            magnetizations.append(np.sum(S))
+
+        M_avg = np.mean(np.abs(magnetizations)) / N
+        M2_avg = np.mean(np.array(magnetizations) ** 2) / (N ** 2)
+        Chi = (N / T) * (M2_avg - M_avg ** 2)
+
+        M_list.append(M_avg)
+        Chi_list.append(Chi)
+
+        # Store snapshot in 2D
+        S2D = S.reshape((L, L))
+        spin_snapshots.append(S2D)
+
+        # Save raw snapshot
+        np.savetxt(f"{folder}/snapshot_T{T:.3f}.dat", S2D, fmt='%d')
+
+    return T_list, spin_snapshots, M_list, Chi_list
+
+def get_neighbors(index, L):
+    row = index // L
+    col = index % L
+    neighbors = [
+        ((row - 1) % L) * L + col,  # up
+        ((row + 1) % L) * L + col,  # down
+        row * L + (col - 1) % L,    # left
+        row * L + (col + 1) % L     # right
+    ]
+    return neighbors
