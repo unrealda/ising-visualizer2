@@ -1,67 +1,63 @@
-import matplotlib.pyplot as plt
 import numpy as np
-import os
+import matplotlib.pyplot as plt
+import imageio
+from ising_model import run_ising_model
 
-def plot_spin_arrows(S, T, filename=None):
-    """
-    绘制当前构型下的箭头图（红↑、蓝↓）并保存/展示。
+def save_lattice(T, S, L, site_dic, xy_dic, key):
+    lattice = np.zeros((L, L))
+    for i in range(len(S)):
+        row, col = xy_dic[i]
+        lattice[row, col] = S[i]
+    filename = f"{key}/{key}_lat_{T:.3f}.dat"
+    np.savetxt(filename, lattice, fmt="%d")
 
-    Parameters:
-        S: 2D numpy array，自旋矩阵 (+1 or -1)
-        T: 当前温度
-        filename: 若不为None，则保存至此路径
-    """
-    Lx, Ly = S.shape
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.set_xlim(0, Ly + 1)
-    ax.set_ylim(0, Lx + 1)
-    ax.set_aspect('equal')
-    ax.axis('off')
+def generate_hysteresis_loop(L, Lattice, Tmin, Tmax, nT, Ntrial, key):
+    T_num, M, Mvar, M2, Chi, Mean_cluster_size = run_ising_model(L, Lattice, Tmin, Tmax, nT, Ntrial)
 
-    up_count = np.sum(S == 1)
-    down_count = np.sum(S == -1)
+    fig, ax1 = plt.subplots()
+    ax1.errorbar(T_num, M, yerr=np.sqrt(Mvar), fmt="x--", label="Magnetization")
+    ax1.set_ylabel("Magnetization")
+    
+    ax2 = ax1.twinx()
+    ax2.plot(T_num, Chi, "o-r", linewidth=1.2, label="Susceptibility")
+    ax2.set_ylabel(r"$\chi = (\langle M^2 \rangle - \langle |M| \rangle^2)$")
 
-    for x in range(Ly):
-        for y in range(Lx):
-            spin = S[y, x]
-            if spin == 1:
-                ax.text(x + 1, Lx - y, '↑', fontsize=14, color='r', ha='center', va='center')
-            else:
-                ax.text(x + 1, Lx - y, '↓', fontsize=14, color='deepskyblue', ha='center', va='center')
-
-    # 标注温度和计数
-    ax.text(1.2, Lx + 0.5, f'T = {T:.3f}', fontsize=12, weight='bold')
-    ax.text(Ly * 0.4, Lx + 0.5, f'↑: {up_count}', fontsize=12, color='r', weight='bold')
-    ax.text(Ly * 0.7, Lx + 0.5, f'↓: {down_count}', fontsize=12, color='deepskyblue', weight='bold')
-
+    ax1.set_xlabel("Temperature")
+    ax1.set_title(f"Magnetization and Susceptibility vs Temperature ({L}x{L} {Lattice} Lattice)")
+    fig.grid(True)
     plt.tight_layout()
-    if filename:
-        plt.savefig(filename, dpi=150)
-        plt.close()
-    else:
-        plt.show()
 
+    plt.savefig(f"{key}/Magnetization_Chi.pdf")
 
-def plot_spin_ratio_vs_temp(temps, up_ratios, down_ratios, outpath=None):
-    """
-    绘制↑/↓比例随温度的变化曲线图。
+def generate_final_hysteresis_animation(L, Lattice, Tmin, Tmax, nT, Ntrial, key):
+    T_num, M, Mvar, M2, Chi, Mean_cluster_size = run_ising_model(L, Lattice, Tmin, Tmax, nT, Ntrial)
+    
+    # Final temperature and hysteresis loop
+    final_T = T_num[-1]
+    H_vals = np.concatenate([np.arange(-1, 1.1, 0.05), np.arange(0.95, -1, -0.05)])
+    M_H = np.zeros(len(H_vals))
 
-    Parameters:
-        temps: 温度数组
-        up_ratios: 向上自旋比例
-        down_ratios: 向下自旋比例
-        outpath: 保存路径（若有）
-    """
-    plt.figure(figsize=(7, 4))
-    plt.plot(temps, up_ratios, 'r-o', label='↑ ratio')
-    plt.plot(temps, down_ratios, 'b-s', label='↓ ratio')
-    plt.xlabel('Temperature T')
-    plt.ylabel('Ratio')
-    plt.title('Spin Ratio vs Temperature')
-    plt.grid(True)
-    plt.legend()
-    if outpath:
-        plt.savefig(outpath, dpi=150)
-        plt.close()
-    else:
-        plt.show()
+    for h_idx, H in enumerate(H_vals):
+        # Simulate and store magnetization for each external field H
+        pass  # Simulate hysteresis loop (similar to ising_model)
+
+    # Generate animated GIF of hysteresis loop
+    images = []
+    fig, ax = plt.subplots()
+    for i in range(len(H_vals)):
+        ax.clear()
+        ax.plot(H_vals[:i+1], M_H[:i+1], "o-", linewidth=1.5, color="r")
+        ax.set_title(f"Final Hysteresis Loop at T = {final_T:.2f}")
+        ax.set_xlabel("External Field H")
+        ax.set_ylabel("Magnetization")
+        ax.set_xlim([-1.1, 1.1])
+        ax.set_ylim([-1.1, 1.1])
+        ax.grid(True)
+
+        frame_path = f"{key}/temp_frame_{i}.png"
+        fig.savefig(frame_path)
+        images.append(imageio.imread(frame_path))
+
+    gif_path = f"{key}/Hysteresis_Final_Temperature.gif"
+    imageio.mimsave(gif_path, images, duration=0.08)
+    return gif_path
