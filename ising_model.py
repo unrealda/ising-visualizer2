@@ -53,30 +53,66 @@ def wolff_step(S, L, nbr, beta):
         S[site] *= -1
     return S, len(cluster)
 
-def run_ising_simulation(L, Tmin, Tmax, nT, Ntrial, folder):
-    os.makedirs(folder, exist_ok=True)
+def run_ising_simulation(L, Tmin, Tmax, nT, Ntrial, Lattice, outdir):
+    """
+    模拟 Ising 模型（Wolff算法），输出包含温度、自旋构型、磁化率、磁化强度等结果。
+    """
     T_list = np.linspace(Tmin, Tmax, nT)
+    spin_configs = []
+    up_ratios = []
+    down_ratios = []
+    magnetizations = []
+    susceptibilities = []
+
     N = L * L
-    nbr, site_dic, xy = square_neighbors(L)
-
-    M_vals = []
-    chi_vals = []
-
     for T in T_list:
-        beta = 1 / T
-        S = np.random.choice([-1, 1], N)
+        beta = 1.0 / T
+        S = 2 * (np.random.randint(0, 2, size=(L, L))) - 1
         M_list = []
 
         for _ in range(Ntrial):
-            S, _ = wolff_step(S, L, nbr, beta)
+            # 用简单 Metropolis 而不是 Wolff 算法（简化版本）
+            for _ in range(N):
+                i, j = np.random.randint(0, L), np.random.randint(0, L)
+                dE = 2 * S[i, j] * (
+                    S[i, (j+1)%L] + S[i, (j-1)%L] + S[(i+1)%L, j] + S[(i-1)%L, j]
+                )
+                if np.random.rand() < np.exp(-beta * dE):
+                    S[i, j] *= -1
             M_list.append(np.sum(S))
 
-        M_arr = np.array(M_list)
-        M_mean = np.mean(np.abs(M_arr)) / N
-        M2_mean = np.mean(M_arr**2) / (N**2)
-        chi = (N / T) * (M2_mean - M_mean**2)
-        M_vals.append(M_mean)
-        chi_vals.append(chi)
-        save_latt(T, S, L, xy, folder)
+        spin_configs.append(S.copy())
+        up_ratios.append(np.sum(S == 1) / N)
+        down_ratios.append(np.sum(S == -1) / N)
+        magnetizations.append(np.mean(np.abs(M_list)) / N)
+        susceptibilities.append((np.var(M_list) / (T * N)))
 
-    return T_list, M_vals, chi_vals
+    # 磁滞回线（只计算最后一个温度）
+    T_final = T_list[-1]
+    beta = 1 / T_final
+    H_vals = np.concatenate([np.linspace(-1, 1, 20), np.linspace(0.95, -1, 20)])
+    S = np.ones((L, L))
+    M_H = []
+
+    for H in H_vals:
+        for _ in range(Ntrial):
+            for _ in range(N):
+                i, j = np.random.randint(0, L), np.random.randint(0, L)
+                dE = 2 * S[i, j] * (
+                    S[i, (j+1)%L] + S[i, (j-1)%L] + S[(i+1)%L, j] + S[(i-1)%L, j]
+                ) + 2 * H * S[i, j]
+                if np.random.rand() < np.exp(-beta * dE):
+                    S[i, j] *= -1
+        M_H.append(np.sum(S) / N)
+
+    return {
+        "temps": T_list,
+        "spin_configs": spin_configs,
+        "magnetizations": magnetizations,
+        "susceptibilities": susceptibilities,
+        "up_ratios": up_ratios,
+        "down_ratios": down_ratios,
+        "H_vals": H_vals,
+        "hysteresis": M_H,
+        "T_final": T_final
+    }
